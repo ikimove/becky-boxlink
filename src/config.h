@@ -39,4 +39,6 @@ void LoadConfig(const std::wstring& iniPath, Config& cfg);
 // ダイアログで変更される項目（[link] と [recent]）だけを書き戻す
 void SaveUserSettings(const std::wstring& iniPath, const Config& cfg);
 void SaveRootNameCache(const std::wstring& iniPath, Config& cfg, const std::string& id, const std::wstring& name);
+// 起点フォルダを変更して保存する。名前が分かっていればキャッシュにも入れる（API を呼ばずに済む）
+void SaveRootFolder(const std::wstring& iniPath, Config& cfg, const std::string& id, const std::wstring& name);
 void AddRecentFolder(Config& cfg, const std::string& id, const std::wstring& path);

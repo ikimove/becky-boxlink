@@ -20,4 +20,5 @@
 #define IDC_STATUS          1015
 #define IDC_EXPIRE_LABEL    1016
 #define IDC_SHOWFILES       1017
+#define IDC_SETROOT         1018
 #endif

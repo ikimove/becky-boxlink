@@ -15,7 +15,8 @@ BEGIN
     LTEXT           "(未ログイン)", IDC_USER, 45, 9, 200, 8, SS_ENDELLIPSIS
     PUSHBUTTON      "ログイン", IDC_LOGIN, 253, 6, 70, 14
 
-    LTEXT           "共有するフォルダ:", -1, 7, 28, 160, 8
+    LTEXT           "共有するフォルダ:", -1, 7, 28, 95, 8
+    PUSHBUTTON      "起点に設定", IDC_SETROOT, 105, 25, 70, 14
     PUSHBUTTON      "ファイル表示", IDC_SHOWFILES, 179, 25, 70, 14
     PUSHBUTTON      "最新表示", IDC_REFRESH, 253, 25, 70, 14
     CONTROL         "", IDC_TREE, "SysTreeView32",

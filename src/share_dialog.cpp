@@ -399,6 +399,37 @@ void RefreshSelected(DialogState& st)
 	TreeView_Expand(st.hTree, h, TVE_EXPAND);
 }
 
+void UpdateOkButton(DialogState& st);
+
+// 選択中のフォルダを一覧の起点にする。起点を選んでいる場合は「すべてのファイル」に戻す。
+// 名前はツリーで分かっているので API は呼ばない（新しい起点の中身は展開時に取得する）
+void OnSetRoot(DialogState& st)
+{
+	Config& cfg = *st.req.cfg;
+	Node* node = SelectedNode(st);
+	if (node && node->root) {
+		if (cfg.rootFolderId == "0") {
+			SetStatus(st, L"起点にするフォルダを選択してください");
+			return;
+		}
+		if (::MessageBoxW(st.hDlg, L"起点の指定を解除して「すべてのファイル」から表示しますか？",
+		                  kTitle, MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+		SaveRootFolder(st.req.iniPath, cfg, "0", std::wstring());
+	} else if (node && !node->file && !node->id.empty()) {
+		std::wstring msg = L"「" + node->name + L"」をフォルダ一覧の起点にしますか？\r\n\r\n"
+			L"次回からこのフォルダの下だけが表示されます。";
+		if (::MessageBoxW(st.hDlg, msg.c_str(), kTitle, MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+		SaveRootFolder(st.req.iniPath, cfg, node->id, node->name);
+	} else {
+		SetStatus(st, L"起点にするフォルダを選択してください");
+		return;
+	}
+	BuildTree(st);
+	::SetDlgItemTextW(st.hDlg, IDC_SELPATH, L"");
+	UpdateOkButton(st);
+	SetStatus(st, L"起点を変更しました");
+}
+
 // ---------------------------------------------------------------------------
 // 画面の状態更新
 
@@ -423,6 +454,7 @@ void UpdateUserUi(DialogState& st)
 	::EnableWindow(st.hTree, loggedIn && !st.loggingIn);
 	::EnableWindow(::GetDlgItem(st.hDlg, IDC_REFRESH), loggedIn && !st.loggingIn);
 	::EnableWindow(::GetDlgItem(st.hDlg, IDC_SHOWFILES), loggedIn && !st.loggingIn);
+	::EnableWindow(::GetDlgItem(st.hDlg, IDC_SETROOT), loggedIn && !st.loggingIn);
 	UpdateOkButton(st);
 }
 
@@ -827,6 +859,9 @@ INT_PTR CALLBACK ShareDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
 				return TRUE;
 			case IDC_REFRESH:
 				RefreshSelected(*st);
+				return TRUE;
+			case IDC_SETROOT:
+				OnSetRoot(*st);
 				return TRUE;
 			case IDC_SHOWFILES:
 				ShowFiles(*st);

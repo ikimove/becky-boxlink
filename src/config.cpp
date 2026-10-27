@@ -150,6 +150,13 @@ void SaveRootNameCache(const std::wstring& iniPath, Config& cfg, const std::stri
 	WriteStr(iniPath, L"cache", L"root_name", name);
 }
 
+void SaveRootFolder(const std::wstring& iniPath, Config& cfg, const std::string& id, const std::wstring& name)
+{
+	cfg.rootFolderId = id;
+	WriteStr(iniPath, L"browse", L"root_folder_id", Utf8ToWide(id));
+	if (id != "0" && !name.empty()) SaveRootNameCache(iniPath, cfg, id, name);
+}
+
 void AddRecentFolder(Config& cfg, const std::string& id, const std::wstring& path)
 {
 	cfg.recent.erase(std::remove_if(cfg.recent.begin(), cfg.recent.end(),
