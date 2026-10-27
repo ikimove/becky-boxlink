@@ -1,0 +1,27 @@
+# 旧Python版（参考資料。認証情報を含むためリポジトリに入れない）
+/BoxLink/
+
+# 認証情報・実行時データ
+*.ini
+!config/*.sample.ini
+*tokens*.json
+*.token
+*.dpapi
+
+# ビルド成果物
+/build/
+/out/
+[Dd]ebug/
+[Rr]elease/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.aps
+*.user
+.vs/
+
+# RimArts の SDK 説明書（再配布条件が明記されていないためローカルのみ）
+/sdk/PlugInSDK.txt

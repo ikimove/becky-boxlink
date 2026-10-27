@@ -1,0 +1,7 @@
+LIBRARY BoxLink
+EXPORTS
+BKC_OnStart
+BKC_OnExit
+BKC_OnMenuInit
+BKC_OnPlugInSetup
+BKC_OnPlugInInfo

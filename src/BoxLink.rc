@@ -1,0 +1,73 @@
+#pragma code_page(65001)
+#include <windows.h>
+#include <commctrl.h>
+#include "resource.h"
+#include "version.h"
+
+LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+
+IDD_SHARE DIALOGEX 0, 0, 330, 310
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Box 共有リンクを作成"
+FONT 9, "Meiryo UI", 400, 0, 0x80
+BEGIN
+    LTEXT           "ユーザー:", -1, 7, 9, 36, 8
+    LTEXT           "(未ログイン)", IDC_USER, 45, 9, 200, 8, SS_ENDELLIPSIS
+    PUSHBUTTON      "ログイン", IDC_LOGIN, 253, 6, 70, 14
+
+    LTEXT           "共有するフォルダ:", -1, 7, 28, 120, 8
+    PUSHBUTTON      "最新表示", IDC_REFRESH, 253, 25, 70, 14
+    CONTROL         "", IDC_TREE, "SysTreeView32",
+                    TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT | TVS_SHOWSELALWAYS |
+                    TVS_DISABLEDRAGDROP | WS_BORDER | WS_TABSTOP, 7, 42, 316, 118
+    LTEXT           "", IDC_SELPATH, 7, 164, 316, 8, SS_PATHELLIPSIS
+
+    AUTOCHECKBOX    "有効期限を設定する", IDC_EXPIRE_CHK, 7, 181, 92, 10
+    EDITTEXT        IDC_EXPIRE_DAYS, 102, 179, 32, 13, ES_NUMBER | ES_RIGHT | ES_AUTOHSCROLL
+    CONTROL         "", IDC_EXPIRE_SPIN, "msctls_updown32",
+                    UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_AUTOBUDDY | UDS_ARROWKEYS | UDS_NOTHOUSANDS,
+                    134, 179, 10, 13
+    LTEXT           "日後", IDC_EXPIRE_LABEL, 140, 181, 20, 8
+    LTEXT           "", IDC_EXPIRE_DATE, 162, 181, 161, 8
+
+    AUTOCHECKBOX    "ワンタイムパスコード（メール認証）を設定する  ※許可するアドレスにチェック",
+                    IDC_OTP_CHK, 7, 198, 316, 10
+    CONTROL         "", IDC_ADDRS, "SysListView32",
+                    LVS_REPORT | LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SHOWSELALWAYS |
+                    WS_BORDER | WS_TABSTOP, 17, 211, 306, 46
+    EDITTEXT        IDC_ADDR_NEW, 17, 261, 230, 13, ES_AUTOHSCROLL
+    PUSHBUTTON      "アドレス追加", IDC_ADDR_ADD, 253, 260, 70, 14
+
+    AUTOCHECKBOX    "ダウンロードを許可する", IDC_DOWNLOAD, 7, 280, 150, 10
+
+    LTEXT           "", IDC_STATUS, 7, 296, 180, 8, SS_ENDELLIPSIS
+    DEFPUSHBUTTON   "作成して挿入", IDOK, 192, 290, 64, 14
+    PUSHBUTTON      "キャンセル", IDCANCEL, 259, 290, 64, 14
+END
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION BOXLINK_VERSION_MAJOR, BOXLINK_VERSION_MINOR, BOXLINK_VERSION_PATCH, 0
+ PRODUCTVERSION BOXLINK_VERSION_MAJOR, BOXLINK_VERSION_MINOR, BOXLINK_VERSION_PATCH, 0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_DLL
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041104b0"
+        BEGIN
+            VALUE "FileDescription", "Becky! BoxLink プラグイン"
+            VALUE "FileVersion", BOXLINK_VERSION_STR
+            VALUE "InternalName", "BoxLink"
+            VALUE "OriginalFilename", "BoxLink.dll"
+            VALUE "ProductName", "Becky! BoxLink"
+            VALUE "ProductVersion", BOXLINK_VERSION_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x411, 1200
+    END
+END

@@ -1,0 +1,262 @@
+#include "box_client.h"
+#include "http.h"
+#include "util.h"
+#include <ctime>
+
+namespace {
+const wchar_t kApiHost[] = L"api.box.com";
+const wchar_t kAuthorizeBase[] = L"https://account.box.com/api/oauth2/authorize";
+// アクセストークンの期限がこの秒数以内なら先に更新する（401 を受けてからの再試行を避ける）
+const long long kRefreshMarginSec = 120;
+}
+
+BoxClient::BoxClient(const Config& cfg, std::wstring tokenPath)
+	: cfg_(cfg), tokenPath_(std::move(tokenPath))
+{
+	LoadTokens(tokenPath_, tokens_);
+}
+
+std::wstring BoxClient::RedirectUri() const
+{
+	return L"http://localhost:" + std::to_wstring(cfg_.redirectPort) + L"/callback";
+}
+
+std::wstring BoxClient::BuildAuthorizeUrl(const std::string& state) const
+{
+	return std::wstring(kAuthorizeBase)
+		+ L"?response_type=code"
+		+ L"&client_id=" + Utf8ToWide(UrlEncode(WideToUtf8(cfg_.clientId)))
+		+ L"&redirect_uri=" + Utf8ToWide(UrlEncode(WideToUtf8(RedirectUri())))
+		+ L"&state=" + Utf8ToWide(state);
+}
+
+std::string BoxClient::ClientParams() const
+{
+	return "&client_id=" + UrlEncode(WideToUtf8(cfg_.clientId))
+		+ "&client_secret=" + UrlEncode(WideToUtf8(cfg_.clientSecret));
+}
+
+bool BoxClient::CompleteLogin(const std::string& code, std::wstring& err)
+{
+	std::string form = "grant_type=authorization_code&code=" + UrlEncode(code)
+		+ "&redirect_uri=" + UrlEncode(WideToUtf8(RedirectUri())) + ClientParams();
+	if (!RequestToken(form, err)) return false;
+	// 表示用のユーザー名はログイン時に1回だけ取得して保存する
+	std::wstring userErr;
+	FetchCurrentUser(userErr);
+	SaveTokens(tokenPath_, tokens_);
+	return true;
+}
+
+void BoxClient::Logout()
+{
+	if (tokens_.HasRefreshToken() && HasCredentials()) {
+		// リフレッシュトークンを失効させる（関連するアクセストークンも無効になる）。失敗しても続行
+		std::string form = "token=" + UrlEncode(tokens_.refreshToken) + ClientParams();
+		HttpsRequest(L"POST", kApiHost, L"/oauth2/revoke",
+		             L"Content-Type: application/x-www-form-urlencoded\r\n", form);
+		SecureClear(form);
+	}
+	tokens_.Clear();
+	DeleteTokens(tokenPath_);
+}
+
+bool BoxClient::RequestToken(const std::string& form, std::wstring& err)
+{
+	if (!HasCredentials()) {
+		err = L"BoxLink.ini に client_id と client_secret を設定してください。";
+		return false;
+	}
+	HttpResponse r = HttpsRequest(L"POST", kApiHost, L"/oauth2/token",
+	                              L"Content-Type: application/x-www-form-urlencoded\r\n", form);
+	if (r.error) { err = HttpErrorText(r.error); return false; }
+
+	nlohmann::json j = nlohmann::json::parse(r.body, nullptr, false);
+	if (r.status != 200) {
+		std::string code = JStr(j, "error");
+		if (r.status == 400 && (code == "invalid_grant" || code == "invalid_request")) {
+			// リフレッシュトークンの期限切れ・失効。再ログインが必要
+			tokens_.Clear();
+			DeleteTokens(tokenPath_);
+			err = L"Box のログイン有効期限が切れました。もう一度ログインしてください。";
+		} else if (code == "invalid_client") {
+			err = L"client_id または client_secret が正しくありません。BoxLink.ini を確認してください。";
+		} else {
+			err = BoxErrorText(r.status, r.body);
+		}
+		return false;
+	}
+
+	std::string access = JStr(j, "access_token");
+	std::string refresh = JStr(j, "refresh_token");
+	if (access.empty() || refresh.empty()) {
+		err = L"Box からトークンを取得できませんでした。";
+		return false;
+	}
+	tokens_.accessToken = access;
+	tokens_.refreshToken = refresh;  // Box のリフレッシュトークンは使い捨てなので必ず保存し直す
+	tokens_.expiresAt = (long long)time(nullptr) + JInt(j, "expires_in", 3600);
+	SecureClear(access);
+	SecureClear(refresh);
+
+	if (!SaveTokens(tokenPath_, tokens_)) {
+		err = L"ログイン情報を保存できませんでした。次回は再ログインが必要になります。";
+		// トークン自体は取得できているので処理は続行する
+	}
+	return true;
+}
+
+bool BoxClient::EnsureAccessToken(bool forceRefresh, std::wstring& err)
+{
+	if (!tokens_.HasRefreshToken()) {
+		err = L"Box にログインしていません。";
+		return false;
+	}
+	if (!forceRefresh && !tokens_.accessToken.empty() &&
+	    tokens_.expiresAt - kRefreshMarginSec > (long long)time(nullptr)) {
+		return true;
+	}
+	std::string form = "grant_type=refresh_token&refresh_token=" + UrlEncode(tokens_.refreshToken) + ClientParams();
+	std::wstring saveWarning;
+	bool ok = RequestToken(form, saveWarning);
+	SecureClear(form);
+	if (!ok) err = saveWarning;
+	return ok;
+}
+
+bool BoxClient::Api(const wchar_t* method, const std::wstring& pathAndQuery, const std::string& body,
+                    nlohmann::json& out, std::wstring& err)
+{
+	if (!EnsureAccessToken(false, err)) return false;
+
+	for (int attempt = 0; attempt < 2; ++attempt) {
+		std::wstring headers = L"Authorization: Bearer " + Utf8ToWide(tokens_.accessToken) + L"\r\n";
+		if (!body.empty()) headers += L"Content-Type: application/json\r\n";
+
+		HttpResponse r = HttpsRequest(method, kApiHost, pathAndQuery, headers, body);
+		++apiCalls_;
+		if (r.error) { err = HttpErrorText(r.error); return false; }
+
+		if (r.status == 401 && attempt == 0) {
+			// 期限前に失効していた場合のみ、1回だけ更新して再試行する
+			if (!EnsureAccessToken(true, err)) return false;
+			continue;
+		}
+		if (r.status < 200 || r.status >= 300) {
+			err = BoxErrorText(r.status, r.body);
+			return false;
+		}
+		out = nlohmann::json::parse(r.body, nullptr, false);
+		if (out.is_discarded()) {
+			err = L"Box の応答を解析できませんでした。";
+			return false;
+		}
+		return true;
+	}
+	err = L"Box の認証に失敗しました。もう一度ログインしてください。";
+	return false;
+}
+
+bool BoxClient::FetchCurrentUser(std::wstring& err)
+{
+	nlohmann::json j;
+	if (!Api(L"GET", L"/2.0/users/me?fields=name,login", "", j, err)) return false;
+	tokens_.userName = Utf8ToWide(JStr(j, "name"));
+	tokens_.userLogin = Utf8ToWide(JStr(j, "login"));
+	return true;
+}
+
+bool BoxClient::ListSubfolders(const std::string& folderId, std::vector<BoxFolder>& out, std::wstring& err)
+{
+	out.clear();
+	// 通常のフォルダでは「フォルダ → ファイル → ウェブリンク」の順に並ぶことが API 仕様で保証されている。
+	// そのためファイルが現れた時点で以降のページ取得を打ち切れる。ルート（ID 0）は順序の保証が異なるので最後まで読む
+	const bool foldersFirst = folderId != "0";
+	const long long limit = 1000;
+	long long offset = 0;
+
+	for (;;) {
+		std::wstring path = L"/2.0/folders/" + Utf8ToWide(UrlEncode(folderId))
+			+ L"/items?fields=type,name,shared_link&sort=name&direction=ASC&limit=" + std::to_wstring(limit)
+			+ L"&offset=" + std::to_wstring(offset);
+		nlohmann::json j;
+		if (!Api(L"GET", path, "", j, err)) return false;
+
+		auto entries = j.find("entries");
+		if (entries == j.end() || !entries->is_array()) break;
+
+		bool reachedFiles = false;
+		for (const auto& e : *entries) {
+			if (JStr(e, "type") != "folder") {
+				reachedFiles = true;
+				continue;
+			}
+			BoxFolder f;
+			f.id = JStr(e, "id");
+			f.name = Utf8ToWide(JStr(e, "name"));
+			auto sl = e.find("shared_link");
+			if (sl != e.end() && sl->is_object()) f.sharedLink = *sl;
+			if (!f.id.empty()) out.push_back(std::move(f));
+		}
+
+		long long total = JInt(j, "total_count", 0);
+		offset += (long long)entries->size();
+		if (entries->empty() || offset >= total) break;
+		if (foldersFirst && reachedFiles) break;
+	}
+	return true;
+}
+
+bool BoxClient::GetFolder(const std::string& folderId, BoxFolder& out, std::wstring& err)
+{
+	nlohmann::json j;
+	std::wstring path = L"/2.0/folders/" + Utf8ToWide(UrlEncode(folderId)) + L"?fields=name,shared_link";
+	if (!Api(L"GET", path, "", j, err)) return false;
+	out.id = JStr(j, "id");
+	out.name = Utf8ToWide(JStr(j, "name"));
+	auto sl = j.find("shared_link");
+	out.sharedLink = (sl != j.end() && sl->is_object()) ? *sl : nlohmann::json();
+	return true;
+}
+
+bool BoxClient::UpdateSharedLink(const std::string& folderId, const nlohmann::json& sharedLink,
+                                 std::string& url, std::wstring& err)
+{
+	nlohmann::json body = {{"shared_link", sharedLink}};
+	nlohmann::json j;
+	// fields=shared_link を付けると、作成と URL の取得を1回の呼び出しで済ませられる
+	std::wstring path = L"/2.0/folders/" + Utf8ToWide(UrlEncode(folderId)) + L"?fields=shared_link";
+	if (!Api(L"PUT", path, body.dump(), j, err)) return false;
+	auto sl = j.find("shared_link");
+	url = (sl != j.end()) ? JStr(*sl, "url") : std::string();
+	if (url.empty()) {
+		err = L"共有リンクは更新されましたが、URL を取得できませんでした。";
+		return false;
+	}
+	return true;
+}
+
+std::wstring BoxErrorText(int status, const std::string& body)
+{
+	nlohmann::json j = nlohmann::json::parse(body, nullptr, false);
+	std::string code = JStr(j, "code");
+	std::wstring message = Utf8ToWide(JStr(j, "message"));
+
+	std::wstring hint;
+	switch (status) {
+	case 400: hint = L"設定の組み合わせが Box で許可されていません。"
+	                 L"（ワンタイムパスコードは Business プラン以上が必要で、管理者が公開リンクを禁止している場合も使えません）"; break;
+	case 403: hint = L"この操作を行う権限がありません。"; break;
+	case 404: hint = L"フォルダが見つかりません。削除または移動された可能性があります。「最新表示」で一覧を更新してください。"; break;
+	case 429: hint = L"Box API の呼び出し回数の上限に達しました。しばらく待ってからお試しください。"; break;
+	default:
+		if (status >= 500) hint = L"Box 側で一時的なエラーが発生しています。しばらく待ってからお試しください。";
+		break;
+	}
+	std::wstring text = L"Box エラー（HTTP " + std::to_wstring(status);
+	if (!code.empty()) text += L" / " + Utf8ToWide(code);
+	text += L"）";
+	if (!hint.empty()) text += L"\r\n" + hint;
+	if (!message.empty()) text += L"\r\n詳細: " + message;
+	return text;
+}
