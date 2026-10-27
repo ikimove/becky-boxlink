@@ -25,6 +25,9 @@ struct Node {
 	bool loaded = false;        // 子フォルダを取得済みか
 	bool recent = false;        // 「最近使ったフォルダ」の項目
 	bool root = false;          // 一覧の起点（共有対象にはしない）
+	bool file = false;          // ファイルの項目（表示のみ。共有対象にはしない）
+	bool filesShown = false;    // 「ファイル表示」で子にファイルを追加済みか
+	long long size = 0;         // ファイルのサイズ（バイト）
 	bool sharedKnown = false;   // sharedLink が取得済みか
 	json sharedLink;            // 共有リンクが無ければ null
 };
@@ -203,12 +206,33 @@ std::wstring TreeLabel(const Node& n)
 	return n.sharedLink.is_object() ? n.name + L"  [共有中]" : n.name;
 }
 
+std::wstring FormatSize(long long bytes)
+{
+	const wchar_t* units[] = {L"B", L"KB", L"MB", L"GB", L"TB"};
+	double v = (double)bytes;
+	int u = 0;
+	while (v >= 1024.0 && u < 4) {
+		v /= 1024.0;
+		++u;
+	}
+	wchar_t buf[32];
+	swprintf_s(buf, u == 0 ? L"%.0f %s" : L"%.1f %s", v, units[u]);
+	return buf;
+}
+
+std::wstring FileLabel(const Node& n)
+{
+	return n.name + L"  (" + FormatSize(n.size) + L")";
+}
+
 void UpdateApiCountStatus(DialogState& st, const std::wstring& prefix)
 {
 	SetStatus(st, prefix + L"（API 呼び出し " + std::to_wstring(st.req.client->ApiCallCount()) + L" 回）");
 }
 
 void UpdateUserUi(DialogState& st);
+
+void InsertFolders(DialogState& st, HTREEITEM hItem, Node* node, std::vector<BoxFolder>& folders);
 
 bool LoadChildren(DialogState& st, HTREEITEM hItem, Node* node)
 {
@@ -222,6 +246,13 @@ bool LoadChildren(DialogState& st, HTREEITEM hItem, Node* node)
 		UpdateUserUi(st);  // ログイン切れの可能性
 		return false;
 	}
+	InsertFolders(st, hItem, node, folders);
+	UpdateApiCountStatus(st, folders.empty() ? L"サブフォルダはありません" : L"フォルダを読み込みました");
+	return true;
+}
+
+void InsertFolders(DialogState& st, HTREEITEM hItem, Node* node, std::vector<BoxFolder>& folders)
+{
 	node->loaded = true;
 	for (auto& f : folders) {
 		Node* child = NewNode(st);
@@ -233,8 +264,56 @@ bool LoadChildren(DialogState& st, HTREEITEM hItem, Node* node)
 		InsertTreeItem(st.hTree, hItem, TreeLabel(*child), child, true);
 	}
 	if (folders.empty()) SetHasChildren(st.hTree, hItem, false);
-	UpdateApiCountStatus(st, folders.empty() ? L"サブフォルダはありません" : L"フォルダを読み込みました");
-	return true;
+}
+
+// 選択中のフォルダ直下のファイルをツリーに追加する。
+// 未展開のフォルダなら、同じ呼び出しでサブフォルダも取得して展開済みにする（API を二重に呼ばない）
+void ShowFiles(DialogState& st)
+{
+	HTREEITEM h = TreeView_GetSelection(st.hTree);
+	Node* node = GetNode(st.hTree, h);
+	if (!node) {
+		SetStatus(st, L"ファイルを表示するフォルダを選択してください");
+		return;
+	}
+	if (node->file) {
+		h = TreeView_GetParent(st.hTree, h);
+		node = GetNode(st.hTree, h);
+		if (!node) return;
+	}
+	if (node->filesShown) {
+		TreeView_Expand(st.hTree, h, TVE_EXPAND);
+		SetStatus(st, L"ファイルは表示済みです（取得し直すには「最新表示」）");
+		return;
+	}
+
+	std::vector<BoxFolder> folders;
+	std::vector<BoxFile> files;
+	std::wstring err;
+	HCURSOR old = ::SetCursor(::LoadCursor(nullptr, IDC_WAIT));
+	bool ok = st.req.client->ListItems(node->id, folders, files, err);
+	::SetCursor(old);
+	if (!ok) {
+		ShowError(st, err);
+		UpdateUserUi(st);
+		return;
+	}
+
+	if (!node->loaded) InsertFolders(st, h, node, folders);
+	node->filesShown = true;
+	for (const auto& f : files) {
+		Node* child = NewNode(st);
+		child->id = f.id;
+		child->name = f.name;
+		child->path = node->path + L"/" + f.name;
+		child->file = true;
+		child->size = f.size;
+		InsertTreeItem(st.hTree, h, FileLabel(*child), child, false);
+	}
+	if (!files.empty()) SetHasChildren(st.hTree, h, true);
+	TreeView_Expand(st.hTree, h, TVE_EXPAND);
+	UpdateApiCountStatus(st, files.empty() ? L"ファイルはありません"
+		: L"ファイル " + std::to_wstring(files.size()) + L" 件を表示しました");
 }
 
 void BuildTree(DialogState& st)
@@ -290,6 +369,10 @@ void RefreshSelected(DialogState& st)
 {
 	HTREEITEM h = TreeView_GetSelection(st.hTree);
 	Node* node = GetNode(st.hTree, h);
+	if (node && node->file) {
+		h = TreeView_GetParent(st.hTree, h);
+		node = GetNode(st.hTree, h);
+	}
 	if (!node || node->recent) {
 		h = st.hAllRoot;
 		node = GetNode(st.hTree, h);
@@ -298,6 +381,7 @@ void RefreshSelected(DialogState& st)
 	// 子項目を破棄して未取得の状態に戻し、展開し直す（ここで1回だけ API を呼ぶ）
 	TreeView_Expand(st.hTree, h, TVE_COLLAPSE | TVE_COLLAPSERESET);
 	node->loaded = false;
+	node->filesShown = false;
 	SetHasChildren(st.hTree, h, true);
 	TreeView_Expand(st.hTree, h, TVE_EXPAND);
 }
@@ -308,7 +392,7 @@ void RefreshSelected(DialogState& st)
 void UpdateOkButton(DialogState& st)
 {
 	Node* node = SelectedNode(st);
-	bool enable = st.req.client->IsLoggedIn() && !st.loggingIn && node && !node->root;
+	bool enable = st.req.client->IsLoggedIn() && !st.loggingIn && node && !node->root && !node->file;
 	::EnableWindow(::GetDlgItem(st.hDlg, IDOK), enable);
 }
 
@@ -325,6 +409,7 @@ void UpdateUserUi(DialogState& st)
 	::SetDlgItemTextW(st.hDlg, IDC_LOGIN, st.loggingIn ? L"ログイン中止" : (loggedIn ? L"ログアウト" : L"ログイン"));
 	::EnableWindow(st.hTree, loggedIn && !st.loggingIn);
 	::EnableWindow(::GetDlgItem(st.hDlg, IDC_REFRESH), loggedIn && !st.loggingIn);
+	::EnableWindow(::GetDlgItem(st.hDlg, IDC_SHOWFILES), loggedIn && !st.loggingIn);
 	UpdateOkButton(st);
 }
 
@@ -507,7 +592,7 @@ void OnCreateLink(DialogState& st)
 	BoxClient& client = *st.req.client;
 
 	Node* node = SelectedNode(st);
-	if (!node || node->root) {
+	if (!node || node->root || node->file) {
 		::MessageBoxW(hDlg, L"共有するフォルダを選択してください。", kTitle, MB_OK | MB_ICONINFORMATION);
 		return;
 	}
@@ -695,7 +780,9 @@ INT_PTR OnNotify(DialogState& st, NMHDR* hdr)
 		Node* node = reinterpret_cast<Node*>(nm->itemNew.lParam);
 		std::wstring path = (node && !node->root) ? node->path : std::wstring();
 		::SetDlgItemTextW(st.hDlg, IDC_SELPATH, path.c_str());
-		if (node && node->sharedLink.is_object()) {
+		if (node && node->file) {
+			SetStatus(st, L"ファイルは表示のみです。共有リンクはフォルダに作成します");
+		} else if (node && node->sharedLink.is_object()) {
 			SetStatus(st, L"このフォルダには既に共有リンクがあります");
 		}
 		UpdateOkButton(st);
@@ -735,6 +822,9 @@ INT_PTR CALLBACK ShareDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
 				return TRUE;
 			case IDC_REFRESH:
 				RefreshSelected(*st);
+				return TRUE;
+			case IDC_SHOWFILES:
+				ShowFiles(*st);
 				return TRUE;
 			case IDC_ADDR_ADD:
 				OnAddAddress(*st);

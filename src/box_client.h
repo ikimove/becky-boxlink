@@ -11,6 +11,12 @@ struct BoxFolder {
 	nlohmann::json sharedLink;  // 共有リンクが無ければ null
 };
 
+struct BoxFile {
+	std::string id;
+	std::wstring name;
+	long long size = 0;
+};
+
 // Box API クライアント。UI スレッドからのみ使う（スレッドセーフではない）。
 // 呼び出し回数を抑えるため、トークンは期限の直前まで使い回し、一覧は必要な分だけ取得する。
 class BoxClient {
@@ -29,6 +35,9 @@ public:
 
 	// 直下のフォルダだけを返す（ファイルは除外）
 	bool ListSubfolders(const std::string& folderId, std::vector<BoxFolder>& out, std::wstring& err);
+	// 直下のフォルダとファイルを返す。ファイルの分だけページ取得が増えるので、利用者が求めた時だけ呼ぶ
+	bool ListItems(const std::string& folderId, std::vector<BoxFolder>& folders,
+	               std::vector<BoxFile>& files, std::wstring& err);
 	bool GetFolder(const std::string& folderId, BoxFolder& out, std::wstring& err);
 	// 共有リンクを作成・更新し、リンク URL を返す
 	bool UpdateSharedLink(const std::string& folderId, const nlohmann::json& sharedLink,
@@ -40,6 +49,8 @@ private:
 	bool Api(const wchar_t* method, const std::wstring& pathAndQuery, const std::string& body,
 	         nlohmann::json& out, std::wstring& err);
 	bool FetchCurrentUser(std::wstring& err);
+	bool ListFolderItems(const std::string& folderId, std::vector<BoxFolder>& folders,
+	                     std::vector<BoxFile>* files, std::wstring& err);
 	std::string ClientParams() const;
 
 	const Config& cfg_;

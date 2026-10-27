@@ -168,16 +168,31 @@ bool BoxClient::FetchCurrentUser(std::wstring& err)
 
 bool BoxClient::ListSubfolders(const std::string& folderId, std::vector<BoxFolder>& out, std::wstring& err)
 {
-	out.clear();
+	return ListFolderItems(folderId, out, nullptr, err);
+}
+
+bool BoxClient::ListItems(const std::string& folderId, std::vector<BoxFolder>& folders,
+                          std::vector<BoxFile>& files, std::wstring& err)
+{
+	return ListFolderItems(folderId, folders, &files, err);
+}
+
+// files が nullptr ならフォルダだけを集め、ファイルが現れた時点でページ取得を打ち切る
+bool BoxClient::ListFolderItems(const std::string& folderId, std::vector<BoxFolder>& folders,
+                                std::vector<BoxFile>* files, std::wstring& err)
+{
+	folders.clear();
+	if (files) files->clear();
 	// 通常のフォルダでは「フォルダ → ファイル → ウェブリンク」の順に並ぶことが API 仕様で保証されている。
 	// そのためファイルが現れた時点で以降のページ取得を打ち切れる。ルート（ID 0）は順序の保証が異なるので最後まで読む
 	const bool foldersFirst = folderId != "0";
 	const long long limit = 1000;
 	long long offset = 0;
+	const wchar_t* fields = files ? L"type,name,size,shared_link" : L"type,name,shared_link";
 
 	for (;;) {
 		std::wstring path = L"/2.0/folders/" + Utf8ToWide(UrlEncode(folderId))
-			+ L"/items?fields=type,name,shared_link&sort=name&direction=ASC&limit=" + std::to_wstring(limit)
+			+ L"/items?fields=" + fields + L"&sort=name&direction=ASC&limit=" + std::to_wstring(limit)
 			+ L"&offset=" + std::to_wstring(offset);
 		nlohmann::json j;
 		if (!Api(L"GET", path, "", j, err)) return false;
@@ -187,8 +202,19 @@ bool BoxClient::ListSubfolders(const std::string& folderId, std::vector<BoxFolde
 
 		bool reachedFiles = false;
 		for (const auto& e : *entries) {
-			if (JStr(e, "type") != "folder") {
+			const std::string type = JStr(e, "type");
+			if (type == "file") {
 				reachedFiles = true;
+				if (!files) continue;
+				BoxFile f;
+				f.id = JStr(e, "id");
+				f.name = Utf8ToWide(JStr(e, "name"));
+				f.size = JInt(e, "size", 0);
+				if (!f.id.empty()) files->push_back(std::move(f));
+				continue;
+			}
+			if (type != "folder") {
+				reachedFiles = true;  // ウェブリンク
 				continue;
 			}
 			BoxFolder f;
@@ -196,13 +222,13 @@ bool BoxClient::ListSubfolders(const std::string& folderId, std::vector<BoxFolde
 			f.name = Utf8ToWide(JStr(e, "name"));
 			auto sl = e.find("shared_link");
 			if (sl != e.end() && sl->is_object()) f.sharedLink = *sl;
-			if (!f.id.empty()) out.push_back(std::move(f));
+			if (!f.id.empty()) folders.push_back(std::move(f));
 		}
 
 		long long total = JInt(j, "total_count", 0);
 		offset += (long long)entries->size();
 		if (entries->empty() || offset >= total) break;
-		if (foldersFirst && reachedFiles) break;
+		if (!files && foldersFirst && reachedFiles) break;
 	}
 	return true;
 }
