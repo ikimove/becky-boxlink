@@ -36,6 +36,15 @@ jobs:
           name: BoxLink-x86
           path: dist/
 
+      # タグとソースのバージョン（src/version.h）が一致しているか確認する
+      - name: Check version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $m = Select-String -Path src/version.h -Pattern 'BOXLINK_VERSION_STR\s+"([^"]+)"'
+          $v = $m.Matches[0].Groups[1].Value
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "タグ ${{ github.ref_name }} と version.h ($v) が一致しません" }
+
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
