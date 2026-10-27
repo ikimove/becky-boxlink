@@ -26,9 +26,8 @@ const wchar_t kTemplate[] =
 	L"[browse]\r\n"
 	L"; フォルダ一覧の起点にする Box フォルダの ID（0=すべてのファイル）\r\n"
 	L"; ID は Box の Web 画面でフォルダを開いたときの URL https://app.box.com/folder/<ID> の数字\r\n"
+	L"; 表示名は Box 上のフォルダ名を初回だけ取得し、[cache] に保存して使い回す\r\n"
 	L"root_folder_id=0\r\n"
-	L"; 起点フォルダの表示名（API 呼び出しを省くため設定ファイルで指定。空なら ID を表示）\r\n"
-	L"root_folder_name=\r\n"
 	L"\r\n"
 	L"[insert]\r\n"
 	L"; paste=カーソル位置に貼り付け / bottom=本文の末尾に追加 / clipboard=コピーのみ\r\n"
@@ -112,7 +111,8 @@ void LoadConfig(const std::wstring& iniPath, Config& cfg)
 	std::wstring rootId = ReadStr(iniPath, L"browse", L"root_folder_id", L"0");
 	if (rootId.empty() || rootId.find_first_not_of(L"0123456789") != std::wstring::npos) rootId = L"0";
 	cfg.rootFolderId = WideToUtf8(rootId);
-	cfg.rootFolderName = ReadStr(iniPath, L"browse", L"root_folder_name", L"");
+	cfg.cachedRootId = WideToUtf8(ReadStr(iniPath, L"cache", L"root_id", L""));
+	cfg.cachedRootName = ReadStr(iniPath, L"cache", L"root_name", L"");
 
 	cfg.insertMode = ReadStr(iniPath, L"insert", L"mode", L"paste");
 
@@ -140,6 +140,14 @@ void SaveUserSettings(const std::wstring& iniPath, const Config& cfg)
 		WriteStr(iniPath, L"recent", (L"id" + n).c_str(), Utf8ToWide(cfg.recent[i].id));
 		WriteStr(iniPath, L"recent", (L"path" + n).c_str(), cfg.recent[i].path);
 	}
+}
+
+void SaveRootNameCache(const std::wstring& iniPath, Config& cfg, const std::string& id, const std::wstring& name)
+{
+	cfg.cachedRootId = id;
+	cfg.cachedRootName = name;
+	WriteStr(iniPath, L"cache", L"root_id", Utf8ToWide(id));
+	WriteStr(iniPath, L"cache", L"root_name", name);
 }
 
 void AddRecentFolder(Config& cfg, const std::string& id, const std::wstring& path)

@@ -18,9 +18,11 @@ struct Config {
 	int expireDays = 14;
 	bool otpEnabled = true;
 	bool canDownload = true;
-	// [browse]  フォルダ一覧の起点（"0" = すべてのファイル）。名前は表示用で、空なら ID を表示する
+	// [browse]  フォルダ一覧の起点（"0" = すべてのファイル）
 	std::string rootFolderId = "0";
-	std::wstring rootFolderName;
+	// [cache]  起点フォルダの Box 上の名前。ID ごとに1回だけ API で取得して保存する
+	std::string cachedRootId;
+	std::wstring cachedRootName;
 	// [insert]  paste: カーソル位置に貼り付け / bottom: 本文末尾に追加 / clipboard: コピーのみ
 	std::wstring insertMode = L"paste";
 	// [recent]
@@ -36,4 +38,5 @@ void EnsureConfigFile(const std::wstring& iniPath);
 void LoadConfig(const std::wstring& iniPath, Config& cfg);
 // ダイアログで変更される項目（[link] と [recent]）だけを書き戻す
 void SaveUserSettings(const std::wstring& iniPath, const Config& cfg);
+void SaveRootNameCache(const std::wstring& iniPath, Config& cfg, const std::string& id, const std::wstring& name);
 void AddRecentFolder(Config& cfg, const std::string& id, const std::wstring& path);

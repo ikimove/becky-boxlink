@@ -322,10 +322,23 @@ void BuildTree(DialogState& st)
 	st.nodes.clear();
 	st.hAllRoot = nullptr;
 
-	const Config& cfg = *st.req.cfg;
+	Config& cfg = *st.req.cfg;
 	const bool allFiles = cfg.rootFolderId == "0";
+	// 起点フォルダの名前は ID ごとに1回だけ取得して設定ファイルに保存する（以後は API を呼ばない）
+	if (!allFiles && cfg.cachedRootId != cfg.rootFolderId && st.req.client->IsLoggedIn()) {
+		BoxFolder f;
+		std::wstring err;
+		HCURSOR old = ::SetCursor(::LoadCursor(nullptr, IDC_WAIT));
+		bool ok = st.req.client->GetFolder(cfg.rootFolderId, f, err);
+		::SetCursor(old);
+		if (ok && !f.name.empty()) {
+			SaveRootNameCache(st.req.iniPath, cfg, cfg.rootFolderId, f.name);
+		} else if (!ok) {
+			ShowError(st, err);
+		}
+	}
 	std::wstring rootName = allFiles ? std::wstring(L"すべてのファイル")
-		: !cfg.rootFolderName.empty() ? cfg.rootFolderName
+		: (cfg.cachedRootId == cfg.rootFolderId && !cfg.cachedRootName.empty()) ? cfg.cachedRootName
 		: L"フォルダ " + Utf8ToWide(cfg.rootFolderId);
 	// 起点が「すべてのファイル」なら子のパスは "/A"、特定フォルダなら "/起点名/A"
 	std::wstring rootPath = allFiles ? std::wstring() : L"/" + rootName;
