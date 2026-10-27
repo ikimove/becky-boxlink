@@ -649,29 +649,19 @@ void OnCreateLink(DialogState& st)
 		sl["unshared_at"] = nullptr;  // 既存の期限を解除
 	}
 
-	size_t keptCount = 0;
+	size_t removedCount = 0;
 	if (otp) {
 		// OTP とパスワードは併用できない
 		if (JBool(existing, "is_password_enabled")) sl["password"] = nullptr;
 
-		// allowlist は指定すると全体が置き換わるため、既存の許可リストを引き継いだうえで宛先を追加する
+		// 再設定のときは既存の許可リストをすべて消し、今回チェックしたアドレスだけにする
+		// （allowlist は指定すると全体が置き換わるので、今回の分だけを送ればよい）
+		if (existingOtp == "allowlist") {
+			auto it = existing["one_time_passcode"].find("allowlist");
+			if (it != existing["one_time_passcode"].end() && it->is_array()) removedCount = it->size();
+		}
 		json allow = json::array();
 		std::set<std::string> seen;
-		if (existingOtp == "allowlist") {
-			const json& cur = existing["one_time_passcode"];
-			auto it = cur.find("allowlist");
-			if (it != cur.end() && it->is_array()) {
-				for (const auto& e : *it) {
-					std::string type = JStr(e, "type");
-					std::string value = JStr(e, "value");
-					if (type.empty() || value.empty()) continue;
-					if (seen.insert(type + ":" + WideToUtf8(ToLower(Utf8ToWide(value)))).second) {
-						allow.push_back(json{{"type", type}, {"value", value}});
-						++keptCount;
-					}
-				}
-			}
-		}
 		for (const auto& addr : emails) {
 			std::string v = WideToUtf8(addr);
 			if (seen.insert("email:" + v).second) allow.push_back(json{{"type", "email"}, {"value", v}});
@@ -692,7 +682,8 @@ void OnCreateLink(DialogState& st)
 		msg += otp ? L"（メール認証あり）\r\n" : L"\r\n";
 		msg += L"・有効期限: " + (expire ? expireDisplay + L" まで" : std::wstring(L"なし")) + L"\r\n";
 		if (otp) {
-			msg += L"・許可リスト: 既存の " + std::to_wstring(keptCount) + L" 件を残して宛先を追加\r\n";
+			msg += L"・許可リスト: 既存の " + std::to_wstring(removedCount) + L" 件をすべて削除し、今回の "
+				+ std::to_wstring(emails.size()) + L" 件に置き換え\r\n";
 		} else if (existingOtp != "none") {
 			msg += L"・ワンタイムパスコード: 解除\r\n";
 		}

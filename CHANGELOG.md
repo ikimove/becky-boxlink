@@ -3,6 +3,10 @@
 バージョンは `src/version.h` と `CMakeLists.txt` の `project(... VERSION ...)` で管理します。
 リリースするときは両方を更新してこのファイルに追記し、`vX.Y.Z` のタグを push します（GitHub Actions が Release を作成します）。
 
+## 0.4.1 (2026-10-27)
+
+- 既存の共有リンクを再設定するとき、ワンタイムパスコードの許可リストを引き継がず、いったんすべて削除して今回チェックしたアドレスだけに置き換えるようにした
+
 ## 0.4.0 (2026-10-27)
 
 - Box アプリのクライアントID・クライアントシークレットを、設定ファイルではなくユーザー環境変数 `BOXLINK_CLIENT_ID` / `BOXLINK_CLIENT_SECRET` から読むように変更した（`BoxLink.ini` の `client_id` / `client_secret` は使われなくなる）
