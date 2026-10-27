@@ -1,6 +1,8 @@
 #include "box_client.h"
 #include "http.h"
 #include "util.h"
+#include <algorithm>
+#include <cstdio>
 #include <ctime>
 #include <map>
 
@@ -22,6 +24,31 @@ struct ListCacheEntry {
 };
 std::wstring g_cacheOwner;  // キャッシュを取得したユーザー。別ユーザーでログインしたら捨てる
 std::map<std::string, ListCacheEntry> g_listCache;
+
+// Box の日時（例: 2026-10-20T10:15:30-07:00）を UNIX 秒にする。解析できなければ 0
+long long ParseBoxTime(const std::string& s)
+{
+	int y = 0, mo = 0, d = 0, h = 0, mi = 0, sec = 0;
+	if (sscanf_s(s.c_str(), "%4d-%2d-%2dT%2d:%2d:%2d", &y, &mo, &d, &h, &mi, &sec) != 6) return 0;
+	tm t{};
+	t.tm_year = y - 1900;
+	t.tm_mon = mo - 1;
+	t.tm_mday = d;
+	t.tm_hour = h;
+	t.tm_min = mi;
+	t.tm_sec = sec;
+	long long utc = (long long)_mkgmtime(&t);
+	if (utc < 0) return 0;
+	// タイムゾーン（"Z" または "+09:00" / "-07:00"）を補正する
+	if (s.size() >= 25 && (s[19] == '+' || s[19] == '-')) {
+		int oh = 0, om = 0;
+		if (sscanf_s(s.c_str() + 20, "%2d:%2d", &oh, &om) == 2) {
+			long long off = (long long)oh * 3600 + (long long)om * 60;
+			utc += (s[19] == '+') ? -off : off;
+		}
+	}
+	return utc;
+}
 
 void ClearListCache()
 {
@@ -231,11 +258,11 @@ bool BoxClient::ListFolderItems(const std::string& folderId, std::vector<BoxFold
 	const bool foldersFirst = folderId != "0";
 	const long long limit = 1000;
 	long long offset = 0;
-	const wchar_t* fields = files ? L"type,name,size,shared_link" : L"type,name,shared_link";
+	const wchar_t* fields = files ? L"type,name,size,modified_at,shared_link" : L"type,name,modified_at,shared_link";
 
 	for (;;) {
 		std::wstring path = L"/2.0/folders/" + Utf8ToWide(UrlEncode(folderId))
-			+ L"/items?fields=" + fields + L"&sort=name&direction=ASC&limit=" + std::to_wstring(limit)
+			+ L"/items?fields=" + fields + L"&sort=date&direction=DESC&limit=" + std::to_wstring(limit)
 			+ L"&offset=" + std::to_wstring(offset);
 		nlohmann::json j;
 		if (!Api(L"GET", path, "", j, err)) return false;
@@ -253,6 +280,7 @@ bool BoxClient::ListFolderItems(const std::string& folderId, std::vector<BoxFold
 				f.id = JStr(e, "id");
 				f.name = Utf8ToWide(JStr(e, "name"));
 				f.size = JInt(e, "size", 0);
+				f.modifiedAt = ParseBoxTime(JStr(e, "modified_at"));
 				if (!f.id.empty()) files->push_back(std::move(f));
 				continue;
 			}
@@ -263,6 +291,7 @@ bool BoxClient::ListFolderItems(const std::string& folderId, std::vector<BoxFold
 			BoxFolder f;
 			f.id = JStr(e, "id");
 			f.name = Utf8ToWide(JStr(e, "name"));
+			f.modifiedAt = ParseBoxTime(JStr(e, "modified_at"));
 			auto sl = e.find("shared_link");
 			if (sl != e.end() && sl->is_object()) f.sharedLink = *sl;
 			if (!f.id.empty()) folders.push_back(std::move(f));
@@ -272,6 +301,14 @@ bool BoxClient::ListFolderItems(const std::string& folderId, std::vector<BoxFold
 		offset += (long long)entries->size();
 		if (entries->empty() || offset >= total) break;
 		if (!files && foldersFirst && reachedFiles) break;
+	}
+
+	// 更新日の新しい順に並べる。API の sort=date に加え、ページをまたぐ場合やルートでも順序が揃うよう手元でも並べ直す
+	std::stable_sort(folders.begin(), folders.end(),
+		[](const BoxFolder& a, const BoxFolder& b) { return a.modifiedAt > b.modifiedAt; });
+	if (files) {
+		std::stable_sort(files->begin(), files->end(),
+			[](const BoxFile& a, const BoxFile& b) { return a.modifiedAt > b.modifiedAt; });
 	}
 
 	ListCacheEntry& entry = g_listCache[folderId];

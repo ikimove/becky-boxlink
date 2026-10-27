@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(BoxLink VERSION 0.8.0 LANGUAGES CXX RC)
+project(BoxLink VERSION 0.9.0 LANGUAGES CXX RC)
 
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
   message(WARNING "Becky! 2 は 32bit のため、-A Win32 で構成してください")

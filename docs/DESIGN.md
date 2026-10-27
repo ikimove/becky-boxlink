@@ -42,8 +42,8 @@ Becky! (B2.exe, 32bit)
 
 | 操作 | 呼び出し | 備考 |
 |---|---|---|
-| フォルダ展開 | `GET /folders/{id}/items?fields=type,name,shared_link&sort=name&limit=1000` | 展開した時だけ。結果はダイアログを閉じるまで保持。通常フォルダは「フォルダ→ファイル」順が保証されるため、ファイルが現れたら次ページを取得しない |
-| ファイル表示 | `GET /folders/{id}/items?fields=type,name,size,shared_link&sort=name&limit=1000` | 「ファイル表示」ボタンを押した時だけ。未展開のフォルダなら同じ呼び出しでサブフォルダも登録する（展開時に再取得しない）。表示済みなら呼ばない |
+| フォルダ展開 | `GET /folders/{id}/items?fields=type,name,modified_at,shared_link&sort=date&direction=DESC&limit=1000` | 展開した時だけ。結果はダイアログを閉じるまで保持。通常フォルダは「フォルダ→ファイル」順が保証されるため、ファイルが現れたら次ページを取得しない |
+| ファイル表示 | `GET /folders/{id}/items?fields=type,name,size,modified_at,shared_link&sort=date&direction=DESC&limit=1000` | 「ファイル表示」ボタンを押した時だけ。未展開のフォルダなら同じ呼び出しでサブフォルダも登録する（展開時に再取得しない）。表示済みなら呼ばない |
 | 最近使ったフォルダの共有状態 | `GET /folders/{id}?fields=name,shared_link` | 最近使ったフォルダから選んで作成するときだけ（ツリーから選んだ場合は一覧で判明済み） |
 | 共有リンク作成 | `PUT /folders/{id}?fields=shared_link` | 1 回で設定と URL 取得を兼ねる |
 | トークン更新 | `POST /oauth2/token` | 有効期限（約60分）の2分前を過ぎていたときのみ。想定外の 401 でも1回だけ更新して再試行 |

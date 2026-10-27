@@ -9,12 +9,14 @@ struct BoxFolder {
 	std::string id;
 	std::wstring name;
 	nlohmann::json sharedLink;  // 共有リンクが無ければ null
+	long long modifiedAt = 0;   // 更新日時（UNIX 秒）。一覧の並べ替えに使う
 };
 
 struct BoxFile {
 	std::string id;
 	std::wstring name;
 	long long size = 0;
+	long long modifiedAt = 0;   // 更新日時（UNIX 秒）
 };
 
 // Box API クライアント。UI スレッドからのみ使う（スレッドセーフではない）。
