@@ -117,6 +117,12 @@ void SecureClear(std::string& s)
 	s.clear();
 }
 
+void SecureClear(std::wstring& s)
+{
+	if (!s.empty()) ::SecureZeroMemory(&s[0], s.size() * sizeof(wchar_t));
+	s.clear();
+}
+
 std::string JStr(const nlohmann::json& j, const char* key)
 {
 	if (!j.is_object()) return {};

@@ -11,6 +11,7 @@
 #include "box_client.h"
 #include "config.h"
 #include "http.h"
+#include "settings_dialog.h"
 #include "share_dialog.h"
 #include "util.h"
 #include "version.h"
@@ -180,9 +181,12 @@ int WINAPI BKC_OnMenuInit(HWND /*hWnd*/, HMENU hMenu, int nType)
 
 int WINAPI BKC_OnPlugInSetup(HWND hWnd)
 {
-	Paths paths = GetPaths();
-	EnsureConfigFile(paths.ini);
-	::ShellExecuteW(hWnd, L"open", L"notepad.exe", (L"\"" + paths.ini + L"\"").c_str(), nullptr, SW_SHOWNORMAL);
+	try {
+		Paths paths = GetPaths();
+		ShowSettingsDialog(g_hInstance, hWnd, paths.ini);
+	} catch (...) {
+		// 例外を Becky! 本体へ伝播させない
+	}
 	return 1;
 }
 

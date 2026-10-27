@@ -1,6 +1,7 @@
 #include "share_dialog.h"
 #include "oauth_listener.h"
 #include "resource.h"
+#include "settings_dialog.h"
 #include "util.h"
 #include <commctrl.h>
 #include <shellapi.h>
@@ -561,13 +562,14 @@ void OnLoginButton(DialogState& st)
 		return;
 	}
 	if (!client.HasCredentials()) {
-		std::wstring msg = std::wstring(L"Box アプリのクライアントID とクライアントシークレットが設定されていません。\r\n\r\n")
-			+ L"ユーザー環境変数 " + kEnvClientId + L" と " + kEnvClientSecret + L" に設定してから、\r\n"
-			+ L"このダイアログを開き直してください。\r\n\r\n環境変数の設定画面を開きますか？";
-		if (::MessageBoxW(st.hDlg, msg.c_str(), kTitle, MB_YESNO | MB_ICONINFORMATION) == IDYES) {
-			::ShellExecuteW(st.hDlg, L"open", L"rundll32.exe", L"sysdm.cpl,EditEnvironmentVariables", nullptr, SW_SHOWNORMAL);
-		}
-		return;
+		std::wstring msg = L"Box アプリのクライアントID とクライアントシークレットが設定されていません。\r\n\r\n"
+			L"設定画面を開きますか？";
+		if (::MessageBoxW(st.hDlg, msg.c_str(), kTitle, MB_YESNO | MB_ICONINFORMATION) != IDYES) return;
+		auto hInst = reinterpret_cast<HINSTANCE>(::GetWindowLongPtrW(st.hDlg, GWLP_HINSTANCE));
+		if (ShowSettingsDialog(hInst, st.hDlg, st.req.iniPath) != IDOK) return;
+		// BoxClient は同じ Config を参照しているので、読み直せばそのまま反映される
+		LoadConfig(st.req.iniPath, *st.req.cfg);
+		if (!client.HasCredentials()) return;
 	}
 
 	auto listener = std::make_unique<OAuthListener>();

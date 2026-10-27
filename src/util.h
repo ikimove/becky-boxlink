@@ -48,6 +48,7 @@ std::vector<std::wstring> ExtractEmails(const std::wstring& text);  // 小文字
 std::wstring ToLower(std::wstring s);
 std::string RandomHex(size_t bytes);
 void SecureClear(std::string& s);
+void SecureClear(std::wstring& s);
 
 // JSON から型を確認しつつ値を取り出す（型違い・欠落でも例外を出さない）
 std::string JStr(const nlohmann::json& j, const char* key);

@@ -41,4 +41,9 @@ void SaveUserSettings(const std::wstring& iniPath, const Config& cfg);
 void SaveRootNameCache(const std::wstring& iniPath, Config& cfg, const std::string& id, const std::wstring& name);
 // 起点フォルダを変更して保存する。名前が分かっていればキャッシュにも入れる（API を呼ばずに済む）
 void SaveRootFolder(const std::wstring& iniPath, Config& cfg, const std::string& id, const std::wstring& name);
+// 設定画面の内容をすべて書き込む（[box] [link] [browse] [insert] [recent]）
+void SaveAllSettings(const std::wstring& iniPath, const Config& cfg);
+// ユーザー環境変数（HKCU\Environment）に保存し、このプロセスと他のアプリにも反映する
+bool SaveUserEnvironment(const wchar_t* name, const std::wstring& value);
+void NotifyEnvironmentChanged();
 void AddRecentFolder(Config& cfg, const std::string& id, const std::wstring& path);

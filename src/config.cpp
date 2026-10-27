@@ -157,6 +157,32 @@ void SaveRootFolder(const std::wstring& iniPath, Config& cfg, const std::string&
 	if (id != "0" && !name.empty()) SaveRootNameCache(iniPath, cfg, id, name);
 }
 
+void SaveAllSettings(const std::wstring& iniPath, const Config& cfg)
+{
+	WriteInt(iniPath, L"box", L"redirect_port", cfg.redirectPort);
+	WriteStr(iniPath, L"browse", L"root_folder_id", Utf8ToWide(cfg.rootFolderId));
+	WriteStr(iniPath, L"insert", L"mode", cfg.insertMode);
+	SaveUserSettings(iniPath, cfg);
+}
+
+bool SaveUserEnvironment(const wchar_t* name, const std::wstring& value)
+{
+	LSTATUS rc = ::RegSetKeyValueW(HKEY_CURRENT_USER, L"Environment", name, REG_SZ,
+	                               value.c_str(), (DWORD)((value.size() + 1) * sizeof(wchar_t)));
+	if (rc != ERROR_SUCCESS) return false;
+	// 読み込みはプロセスの環境変数を優先するので、このプロセスの値も合わせて更新する
+	::SetEnvironmentVariableW(name, value.c_str());
+	return true;
+}
+
+void NotifyEnvironmentChanged()
+{
+	// エクスプローラーなどに環境変数の変更を知らせる（以後に起動したアプリに引き継がれる）
+	DWORD_PTR result = 0;
+	::SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, reinterpret_cast<LPARAM>(L"Environment"),
+	                      SMTO_ABORTIFHUNG, 2000, &result);
+}
+
 void AddRecentFolder(Config& cfg, const std::string& id, const std::wstring& path)
 {
 	cfg.recent.erase(std::remove_if(cfg.recent.begin(), cfg.recent.end(),
