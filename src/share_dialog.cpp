@@ -59,6 +59,7 @@ struct DialogState {
 	std::thread loginThread;
 	OAuthResult loginResult;  // ワーカーが書き込み、join 後に UI スレッドが読む
 	bool loggingIn = false;
+	bool forceReload = false;  // 「最新表示」の再展開中だけ true（一覧のキャッシュを使わない）
 };
 
 // ---------------------------------------------------------------------------
@@ -239,7 +240,7 @@ bool LoadChildren(DialogState& st, HTREEITEM hItem, Node* node)
 	std::vector<BoxFolder> folders;
 	std::wstring err;
 	HCURSOR old = ::SetCursor(::LoadCursor(nullptr, IDC_WAIT));
-	bool ok = st.req.client->ListSubfolders(node->id, folders, err);
+	bool ok = st.req.client->ListSubfolders(node->id, folders, err, st.forceReload);
 	::SetCursor(old);
 	if (!ok) {
 		ShowError(st, err);
@@ -396,7 +397,9 @@ void RefreshSelected(DialogState& st)
 	node->loaded = false;
 	node->filesShown = false;
 	SetHasChildren(st.hTree, h, true);
+	st.forceReload = true;
 	TreeView_Expand(st.hTree, h, TVE_EXPAND);
+	st.forceReload = false;
 }
 
 void UpdateOkButton(DialogState& st);

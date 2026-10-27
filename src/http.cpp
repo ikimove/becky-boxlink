@@ -1,10 +1,20 @@
 #include "http.h"
 #include "version.h"
 #include <winhttp.h>
+#include <map>
 #include <memory>
+#include <mutex>
 
 #ifndef WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY
 #define WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY 4
+#endif
+#ifndef WINHTTP_OPTION_DECOMPRESSION
+#define WINHTTP_OPTION_DECOMPRESSION 118
+#define WINHTTP_DECOMPRESSION_FLAG_ALL 0x00000003
+#endif
+#ifndef WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL
+#define WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL 133
+#define WINHTTP_PROTOCOL_FLAG_HTTP2 0x1
 #endif
 
 namespace {
@@ -16,6 +26,40 @@ using UniqueInet = std::unique_ptr<void, InetCloser>;
 
 const wchar_t kUserAgent[] = L"BeckyBoxLink/" BOXLINK_VERSION_W;  // 隣接する L"" リテラルは連結される
 
+// セッションと接続はプロセス内で使い回す（TLS ハンドシェイクとプロキシ検出を毎回やり直さないため）。
+// DLL のアンロード時（ローダーロック中）に WinHTTP を閉じないよう、静的デストラクタではなく
+// HttpShutdown（BKC_OnExit から呼ぶ）で明示的に閉じる。そのため生のハンドルで持つ
+std::mutex g_mutex;
+HINTERNET g_session = nullptr;
+std::map<std::wstring, HINTERNET>* g_connections = nullptr;  // ホスト名 → 接続ハンドル
+
+HINTERNET GetConnection(const wchar_t* host, DWORD& error)
+{
+	std::lock_guard<std::mutex> lock(g_mutex);
+	if (!g_session) {
+		g_session = ::WinHttpOpen(kUserAgent, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+		                          WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+		if (!g_session) {
+			g_session = ::WinHttpOpen(kUserAgent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+			                          WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+		}
+		if (!g_session) { error = ::GetLastError(); return nullptr; }
+		::WinHttpSetTimeouts(g_session, 10000, 10000, 30000, 30000);
+		// 応答の gzip 圧縮と HTTP/2 を有効にする（未対応の OS では失敗するだけなので無視する）
+		DWORD decomp = WINHTTP_DECOMPRESSION_FLAG_ALL;
+		::WinHttpSetOption(g_session, WINHTTP_OPTION_DECOMPRESSION, &decomp, sizeof(decomp));
+		DWORD http2 = WINHTTP_PROTOCOL_FLAG_HTTP2;
+		::WinHttpSetOption(g_session, WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL, &http2, sizeof(http2));
+	}
+	if (!g_connections) g_connections = new std::map<std::wstring, HINTERNET>();
+	auto it = g_connections->find(host);
+	if (it != g_connections->end()) return it->second;
+	HINTERNET connect = ::WinHttpConnect(g_session, host, INTERNET_DEFAULT_HTTPS_PORT, 0);
+	if (!connect) { error = ::GetLastError(); return nullptr; }
+	(*g_connections)[host] = connect;
+	return connect;
+}
+
 } // namespace
 
 HttpResponse HttpsRequest(const wchar_t* method, const wchar_t* host, const std::wstring& pathAndQuery,
@@ -23,20 +67,10 @@ HttpResponse HttpsRequest(const wchar_t* method, const wchar_t* host, const std:
 {
 	HttpResponse res;
 
-	// 解放順は宣言の逆（request → connect → session）
-	UniqueInet session(::WinHttpOpen(kUserAgent, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-	                                 WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
-	if (!session) {
-		session.reset(::WinHttpOpen(kUserAgent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-		                            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
-	}
-	if (!session) { res.error = ::GetLastError(); return res; }
-	::WinHttpSetTimeouts(session.get(), 10000, 10000, 30000, 30000);
+	HINTERNET connect = GetConnection(host, res.error);
+	if (!connect) return res;
 
-	UniqueInet connect(::WinHttpConnect(session.get(), host, INTERNET_DEFAULT_HTTPS_PORT, 0));
-	if (!connect) { res.error = ::GetLastError(); return res; }
-
-	UniqueInet request(::WinHttpOpenRequest(connect.get(), method, pathAndQuery.c_str(), nullptr,
+	UniqueInet request(::WinHttpOpenRequest(connect, method, pathAndQuery.c_str(), nullptr,
 	                                        WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE));
 	if (!request) { res.error = ::GetLastError(); return res; }
 
@@ -66,6 +100,20 @@ HttpResponse HttpsRequest(const wchar_t* method, const wchar_t* host, const std:
 		if (read == 0) break;
 	}
 	return res;
+}
+
+void HttpShutdown()
+{
+	std::lock_guard<std::mutex> lock(g_mutex);
+	if (g_connections) {
+		for (auto& kv : *g_connections) ::WinHttpCloseHandle(kv.second);
+		delete g_connections;
+		g_connections = nullptr;
+	}
+	if (g_session) {
+		::WinHttpCloseHandle(g_session);
+		g_session = nullptr;
+	}
 }
 
 std::wstring HttpErrorText(DWORD error)

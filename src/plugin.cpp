@@ -10,6 +10,7 @@
 #include "BeckyAPI.h"
 #include "box_client.h"
 #include "config.h"
+#include "http.h"
 #include "share_dialog.h"
 #include "util.h"
 #include "version.h"
@@ -162,6 +163,7 @@ int WINAPI BKC_OnStart()
 
 int WINAPI BKC_OnExit()
 {
+	HttpShutdown();
 	return 0;
 }
 

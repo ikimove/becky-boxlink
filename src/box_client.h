@@ -33,11 +33,16 @@ public:
 	bool CompleteLogin(const std::string& code, std::wstring& err);
 	void Logout();
 
+	// 一覧はプロセス内に kListCacheSec 秒キャッシュし、ダイアログを開き直しても API を呼ばない。
+	// forceReload（「最新表示」）のときだけキャッシュを使わずに取得する
+
 	// 直下のフォルダだけを返す（ファイルは除外）
-	bool ListSubfolders(const std::string& folderId, std::vector<BoxFolder>& out, std::wstring& err);
+	bool ListSubfolders(const std::string& folderId, std::vector<BoxFolder>& out, std::wstring& err,
+	                    bool forceReload = false);
 	// 直下のフォルダとファイルを返す。ファイルの分だけページ取得が増えるので、利用者が求めた時だけ呼ぶ
 	bool ListItems(const std::string& folderId, std::vector<BoxFolder>& folders,
-	               std::vector<BoxFile>& files, std::wstring& err);
+	               std::vector<BoxFile>& files, std::wstring& err, bool forceReload = false);
+	// キャッシュした一覧にそのフォルダがあれば API を呼ばずに返す
 	bool GetFolder(const std::string& folderId, BoxFolder& out, std::wstring& err);
 	// 共有リンクを作成・更新し、リンク URL を返す
 	bool UpdateSharedLink(const std::string& folderId, const nlohmann::json& sharedLink,
@@ -50,7 +55,7 @@ private:
 	         nlohmann::json& out, std::wstring& err);
 	bool FetchCurrentUser(std::wstring& err);
 	bool ListFolderItems(const std::string& folderId, std::vector<BoxFolder>& folders,
-	                     std::vector<BoxFile>* files, std::wstring& err);
+	                     std::vector<BoxFile>* files, std::wstring& err, bool forceReload);
 	std::string ClientParams() const;
 
 	const Config& cfg_;

@@ -2,12 +2,41 @@
 #include "http.h"
 #include "util.h"
 #include <ctime>
+#include <map>
 
 namespace {
 const wchar_t kApiHost[] = L"api.box.com";
 const wchar_t kAuthorizeBase[] = L"https://account.box.com/api/oauth2/authorize";
 // アクセストークンの期限がこの秒数以内なら先に更新する（401 を受けてからの再試行を避ける）
 const long long kRefreshMarginSec = 120;
+// フォルダ一覧のキャッシュ有効期間。他の人が Box 上で変更した内容は、この時間か「最新表示」で反映される
+const long long kListCacheSec = 600;
+
+// フォルダ一覧のキャッシュ（UI スレッドからのみ使う）。BoxClient はダイアログごとに作り直すので、
+// ダイアログを開き直しても再取得しないようプロセス内に持つ。中身は標準コンテナだけなので静的破棄で問題ない
+struct ListCacheEntry {
+	long long fetchedAt = 0;
+	bool withFiles = false;
+	std::vector<BoxFolder> folders;
+	std::vector<BoxFile> files;
+};
+std::wstring g_cacheOwner;  // キャッシュを取得したユーザー。別ユーザーでログインしたら捨てる
+std::map<std::string, ListCacheEntry> g_listCache;
+
+void ClearListCache()
+{
+	g_listCache.clear();
+	g_cacheOwner.clear();
+}
+
+const ListCacheEntry* FindFreshEntry(const std::string& folderId, bool needFiles)
+{
+	auto it = g_listCache.find(folderId);
+	if (it == g_listCache.end()) return nullptr;
+	if ((long long)time(nullptr) - it->second.fetchedAt > kListCacheSec) return nullptr;
+	if (needFiles && !it->second.withFiles) return nullptr;
+	return &it->second;
+}
 }
 
 BoxClient::BoxClient(const Config& cfg, std::wstring tokenPath)
@@ -59,6 +88,7 @@ void BoxClient::Logout()
 	}
 	tokens_.Clear();
 	DeleteTokens(tokenPath_);
+	ClearListCache();
 }
 
 bool BoxClient::RequestToken(const std::string& form, std::wstring& err)
@@ -166,23 +196,36 @@ bool BoxClient::FetchCurrentUser(std::wstring& err)
 	return true;
 }
 
-bool BoxClient::ListSubfolders(const std::string& folderId, std::vector<BoxFolder>& out, std::wstring& err)
+bool BoxClient::ListSubfolders(const std::string& folderId, std::vector<BoxFolder>& out, std::wstring& err,
+                               bool forceReload)
 {
-	return ListFolderItems(folderId, out, nullptr, err);
+	return ListFolderItems(folderId, out, nullptr, err, forceReload);
 }
 
 bool BoxClient::ListItems(const std::string& folderId, std::vector<BoxFolder>& folders,
-                          std::vector<BoxFile>& files, std::wstring& err)
+                          std::vector<BoxFile>& files, std::wstring& err, bool forceReload)
 {
-	return ListFolderItems(folderId, folders, &files, err);
+	return ListFolderItems(folderId, folders, &files, err, forceReload);
 }
 
 // files が nullptr ならフォルダだけを集め、ファイルが現れた時点でページ取得を打ち切る
 bool BoxClient::ListFolderItems(const std::string& folderId, std::vector<BoxFolder>& folders,
-                                std::vector<BoxFile>* files, std::wstring& err)
+                                std::vector<BoxFile>* files, std::wstring& err, bool forceReload)
 {
 	folders.clear();
 	if (files) files->clear();
+
+	if (g_cacheOwner != tokens_.userLogin) {
+		ClearListCache();
+		g_cacheOwner = tokens_.userLogin;
+	}
+	if (!forceReload) {
+		if (const ListCacheEntry* hit = FindFreshEntry(folderId, files != nullptr)) {
+			folders = hit->folders;
+			if (files) *files = hit->files;
+			return true;
+		}
+	}
 	// 通常のフォルダでは「フォルダ → ファイル → ウェブリンク」の順に並ぶことが API 仕様で保証されている。
 	// そのためファイルが現れた時点で以降のページ取得を打ち切れる。ルート（ID 0）は順序の保証が異なるので最後まで読む
 	const bool foldersFirst = folderId != "0";
@@ -230,11 +273,28 @@ bool BoxClient::ListFolderItems(const std::string& folderId, std::vector<BoxFold
 		if (entries->empty() || offset >= total) break;
 		if (!files && foldersFirst && reachedFiles) break;
 	}
+
+	ListCacheEntry& entry = g_listCache[folderId];
+	entry.fetchedAt = (long long)time(nullptr);
+	entry.withFiles = files != nullptr;
+	entry.folders = folders;
+	if (files) entry.files = *files; else entry.files.clear();
 	return true;
 }
 
 bool BoxClient::GetFolder(const std::string& folderId, BoxFolder& out, std::wstring& err)
 {
+	if (g_cacheOwner == tokens_.userLogin) {
+		for (const auto& kv : g_listCache) {
+			if ((long long)time(nullptr) - kv.second.fetchedAt > kListCacheSec) continue;
+			for (const auto& f : kv.second.folders) {
+				if (f.id == folderId) {
+					out = f;
+					return true;
+				}
+			}
+		}
+	}
 	nlohmann::json j;
 	std::wstring path = L"/2.0/folders/" + Utf8ToWide(UrlEncode(folderId)) + L"?fields=name,shared_link";
 	if (!Api(L"GET", path, "", j, err)) return false;
@@ -258,6 +318,12 @@ bool BoxClient::UpdateSharedLink(const std::string& folderId, const nlohmann::js
 	if (url.empty()) {
 		err = L"共有リンクは更新されましたが、URL を取得できませんでした。";
 		return false;
+	}
+	// キャッシュ中の一覧にも反映し、次に開いたとき「[共有中]」の表示や上書き確認が正しく出るようにする
+	for (auto& kv : g_listCache) {
+		for (auto& f : kv.second.folders) {
+			if (f.id == folderId) f.sharedLink = *sl;
+		}
 	}
 	return true;
 }

@@ -12,4 +12,7 @@ struct HttpResponse {
 HttpResponse HttpsRequest(const wchar_t* method, const wchar_t* host, const std::wstring& pathAndQuery,
                           const std::wstring& headers, const std::string& body);
 
+// 使い回している WinHTTP のハンドルを閉じる。BKC_OnExit から呼ぶ（DllMain からは呼ばない）
+void HttpShutdown();
+
 std::wstring HttpErrorText(DWORD error);
