@@ -7,13 +7,11 @@ namespace {
 const wchar_t kTemplate[] =
 	L"; Becky! BoxLink 設定ファイル\r\n"
 	L";\r\n"
-	L"; Box Developer Console で作成したアプリ（ユーザー認証 OAuth 2.0）の\r\n"
-	L"; クライアントID とクライアントシークレットを設定してください。\r\n"
+	L"; Box アプリのクライアントID とクライアントシークレットは、この設定ファイルではなく\r\n"
+	L"; ユーザー環境変数 BOXLINK_CLIENT_ID / BOXLINK_CLIENT_SECRET に設定してください。\r\n"
 	L"; リダイレクトURI には http://localhost:<redirect_port>/callback を登録します。\r\n"
 	L"\r\n"
 	L"[box]\r\n"
-	L"client_id=\r\n"
-	L"client_secret=\r\n"
 	L"redirect_port=53682\r\n"
 	L"\r\n"
 	L"[link]\r\n"
@@ -58,6 +56,37 @@ void WriteInt(const std::wstring& ini, const wchar_t* sec, const wchar_t* key, i
 	WriteStr(ini, sec, key, std::to_wstring(value));
 }
 
+// プロセスの環境変数を優先し、無ければレジストリのユーザー環境変数を読む。
+// 環境変数を登録した後に Becky! を起動し直さなくても（起動元が古い環境を渡していても）読めるようにするため
+std::wstring ReadEnv(const wchar_t* name)
+{
+	std::vector<wchar_t> buf(1024);
+	DWORD n = ::GetEnvironmentVariableW(name, buf.data(), (DWORD)buf.size());
+	if (n >= buf.size()) {
+		buf.resize(n);
+		n = ::GetEnvironmentVariableW(name, buf.data(), (DWORD)buf.size());
+	}
+	if (n > 0 && n < buf.size()) return std::wstring(buf.data(), n);
+
+	DWORD bytes = (DWORD)(buf.size() * sizeof(wchar_t));
+	LSTATUS rc = ::RegGetValueW(HKEY_CURRENT_USER, L"Environment", name, RRF_RT_REG_SZ, nullptr, buf.data(), &bytes);
+	if (rc == ERROR_MORE_DATA) {
+		buf.resize(bytes / sizeof(wchar_t) + 1);
+		bytes = (DWORD)(buf.size() * sizeof(wchar_t));
+		rc = ::RegGetValueW(HKEY_CURRENT_USER, L"Environment", name, RRF_RT_REG_SZ, nullptr, buf.data(), &bytes);
+	}
+	return rc == ERROR_SUCCESS ? std::wstring(buf.data()) : std::wstring();
+}
+
+std::wstring Trim(const std::wstring& s)
+{
+	const wchar_t* kSpaces = L" \t\r\n";
+	size_t b = s.find_first_not_of(kSpaces);
+	if (b == std::wstring::npos) return std::wstring();
+	size_t e = s.find_last_not_of(kSpaces);
+	return s.substr(b, e - b + 1);
+}
+
 } // namespace
 
 void EnsureConfigFile(const std::wstring& iniPath)
@@ -70,8 +99,8 @@ void EnsureConfigFile(const std::wstring& iniPath)
 
 void LoadConfig(const std::wstring& iniPath, Config& cfg)
 {
-	cfg.clientId = ReadStr(iniPath, L"box", L"client_id", L"");
-	cfg.clientSecret = ReadStr(iniPath, L"box", L"client_secret", L"");
+	cfg.clientId = Trim(ReadEnv(kEnvClientId));
+	cfg.clientSecret = Trim(ReadEnv(kEnvClientSecret));
 	cfg.redirectPort = ReadInt(iniPath, L"box", L"redirect_port", 53682);
 	if (cfg.redirectPort <= 0 || cfg.redirectPort > 65535) cfg.redirectPort = 53682;
 

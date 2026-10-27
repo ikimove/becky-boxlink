@@ -3,6 +3,10 @@
 バージョンは `src/version.h` と `CMakeLists.txt` の `project(... VERSION ...)` で管理します。
 リリースするときは両方を更新してこのファイルに追記し、`vX.Y.Z` のタグを push します（GitHub Actions が Release を作成します）。
 
+## 0.4.0 (2026-10-27)
+
+- Box アプリのクライアントID・クライアントシークレットを、設定ファイルではなくユーザー環境変数 `BOXLINK_CLIENT_ID` / `BOXLINK_CLIENT_SECRET` から読むように変更した（`BoxLink.ini` の `client_id` / `client_secret` は使われなくなる）
+
 ## 0.3.0 (2026-10-27)
 
 - フォルダ一覧の起点を設定ファイル（`[browse] root_folder_id` / `root_folder_name`）で指定できるようにした

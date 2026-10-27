@@ -64,7 +64,7 @@ void BoxClient::Logout()
 bool BoxClient::RequestToken(const std::string& form, std::wstring& err)
 {
 	if (!HasCredentials()) {
-		err = L"BoxLink.ini に client_id と client_secret を設定してください。";
+		err = L"環境変数 BOXLINK_CLIENT_ID と BOXLINK_CLIENT_SECRET を設定してください。";
 		return false;
 	}
 	HttpResponse r = HttpsRequest(L"POST", kApiHost, L"/oauth2/token",
@@ -80,7 +80,7 @@ bool BoxClient::RequestToken(const std::string& form, std::wstring& err)
 			DeleteTokens(tokenPath_);
 			err = L"Box のログイン有効期限が切れました。もう一度ログインしてください。";
 		} else if (code == "invalid_client") {
-			err = L"client_id または client_secret が正しくありません。BoxLink.ini を確認してください。";
+			err = L"クライアントID またはクライアントシークレットが正しくありません。環境変数 BOXLINK_CLIENT_ID / BOXLINK_CLIENT_SECRET を確認してください。";
 		} else {
 			err = BoxErrorText(r.status, r.body);
 		}

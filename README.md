@@ -17,7 +17,7 @@ Becky! Internet Mail のメール作成画面から Box にログインし、フ
 1. [Actions](../../actions) または [Releases](../../releases) から `BoxLink-x86` をダウンロードします
 2. `BoxLink.dll` を Becky! の `PlugIns` フォルダ（例: `C:\Becky!\<ユーザー>\PlugIns\`）にコピーし、Becky! を再起動します
 3. メール作成画面の本文を右クリック →「Box 共有リンクを作成...」を選びます
-4. 初回は `<データフォルダ>\PlugIns\BoxLink.ini` が作られます。下記の Box アプリの情報を設定してください
+4. 初回は `<データフォルダ>\PlugIns\BoxLink.ini` が作られます。Box アプリの情報は下記のとおり環境変数に設定してください
 
 ## Box アプリの準備（管理者・初回のみ）
 
@@ -25,7 +25,11 @@ Becky! Internet Mail のメール作成画面から Box にログインし、フ
 2. 「構成」タブで次を設定
    - リダイレクトURI: `http://localhost:53682/callback`
    - アプリケーションスコープ: 「Box に格納されているすべてのファイルとフォルダへの読み取り/書き込み」
-3. クライアントID・クライアントシークレットを `BoxLink.ini` の `[box]` に設定
+3. クライアントID・クライアントシークレットを **ユーザー環境変数** に設定（設定ファイルには書きません）
+   - `BOXLINK_CLIENT_ID` … クライアントID
+   - `BOXLINK_CLIENT_SECRET` … クライアントシークレット
+   - 設定方法: Windows の「環境変数を編集」画面、または PowerShell で
+     `[Environment]::SetEnvironmentVariable('BOXLINK_CLIENT_ID', '<ID>', 'User')`
 4. 社内の Box 管理者による承認が必要な場合は、管理コンソールでアプリを有効化してもらいます
 
 ## 使い方
@@ -55,7 +59,7 @@ root_folder_name=顧客共有     ; ツリーに表示する名前（空なら I
 | ファイル | 内容 |
 |---|---|
 | `<データフォルダ>\PlugIns\BoxLink.dll` | プラグイン本体 |
-| `<データフォルダ>\PlugIns\BoxLink.ini` | 設定（client_id など）と最近使ったフォルダ |
+| `<データフォルダ>\PlugIns\BoxLink.ini` | 設定（有効期限の既定値・起点フォルダなど）と最近使ったフォルダ |
 | `<データフォルダ>\PlugIns\BoxLink\token.dat` | ログイン情報（Windows の DPAPI で暗号化。同じ Windows ユーザーでのみ復号可能） |
 
 ## ビルド

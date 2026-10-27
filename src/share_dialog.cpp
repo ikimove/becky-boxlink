@@ -513,10 +513,11 @@ void OnLoginButton(DialogState& st)
 		return;
 	}
 	if (!client.HasCredentials()) {
-		std::wstring msg = L"BoxLink.ini に client_id と client_secret が設定されていません。\r\n設定ファイルを開きますか？\r\n\r\n"
-			+ st.req.iniPath;
+		std::wstring msg = std::wstring(L"Box アプリのクライアントID とクライアントシークレットが設定されていません。\r\n\r\n")
+			+ L"ユーザー環境変数 " + kEnvClientId + L" と " + kEnvClientSecret + L" に設定してから、\r\n"
+			+ L"このダイアログを開き直してください。\r\n\r\n環境変数の設定画面を開きますか？";
 		if (::MessageBoxW(st.hDlg, msg.c_str(), kTitle, MB_YESNO | MB_ICONINFORMATION) == IDYES) {
-			::ShellExecuteW(st.hDlg, L"open", L"notepad.exe", (L"\"" + st.req.iniPath + L"\"").c_str(), nullptr, SW_SHOWNORMAL);
+			::ShellExecuteW(st.hDlg, L"open", L"rundll32.exe", L"sysdm.cpl,EditEnvironmentVariables", nullptr, SW_SHOWNORMAL);
 		}
 		return;
 	}
@@ -752,7 +753,7 @@ void OnInitDialog(DialogState& st)
 	BuildTree(st);
 
 	if (!st.req.client->HasCredentials()) {
-		SetStatus(st, L"BoxLink.ini に client_id / client_secret を設定してください");
+		SetStatus(st, L"環境変数 BOXLINK_CLIENT_ID / BOXLINK_CLIENT_SECRET を設定してください");
 	} else if (!st.req.client->IsLoggedIn()) {
 		SetStatus(st, L"「ログイン」を押して Box にログインしてください");
 	} else if (!st.req.cfg->recent.empty()) {

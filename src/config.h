@@ -8,9 +8,10 @@ struct RecentFolder {
 };
 
 struct Config {
-	// [box]
+	// 環境変数 BOXLINK_CLIENT_ID / BOXLINK_CLIENT_SECRET（設定ファイルには保存しない）
 	std::wstring clientId;
 	std::wstring clientSecret;
+	// [box]
 	int redirectPort = 53682;
 	// [link]
 	bool expireEnabled = true;
@@ -27,6 +28,8 @@ struct Config {
 };
 
 constexpr size_t kMaxRecentFolders = 10;
+constexpr wchar_t kEnvClientId[] = L"BOXLINK_CLIENT_ID";
+constexpr wchar_t kEnvClientSecret[] = L"BOXLINK_CLIENT_SECRET";
 
 // 設定ファイルが無ければひな形を UTF-16LE で作成する（日本語のフォルダ名を保存できるように）
 void EnsureConfigFile(const std::wstring& iniPath);

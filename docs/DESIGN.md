@@ -84,8 +84,6 @@ SDK の推奨に従い、DLL と同じ名前で PlugIns フォルダに置く。
 
 ```ini
 [box]
-client_id =
-client_secret =
 redirect_port = 53682
 
 [link]
