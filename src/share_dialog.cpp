@@ -24,6 +24,7 @@ struct Node {
 	std::wstring path;          // 例: "/営業/見積書"
 	bool loaded = false;        // 子フォルダを取得済みか
 	bool recent = false;        // 「最近使ったフォルダ」の項目
+	bool root = false;          // 一覧の起点（共有対象にはしない）
 	bool sharedKnown = false;   // sharedLink が取得済みか
 	json sharedLink;            // 共有リンクが無ければ null
 };
@@ -243,10 +244,24 @@ void BuildTree(DialogState& st)
 	st.nodes.clear();
 	st.hAllRoot = nullptr;
 
-	// 最近使ったフォルダは設定ファイルから表示するだけなので API を呼ばない
-	if (!st.req.cfg->recent.empty()) {
+	const Config& cfg = *st.req.cfg;
+	const bool allFiles = cfg.rootFolderId == "0";
+	std::wstring rootName = allFiles ? std::wstring(L"すべてのファイル")
+		: !cfg.rootFolderName.empty() ? cfg.rootFolderName
+		: L"フォルダ " + Utf8ToWide(cfg.rootFolderId);
+	// 起点が「すべてのファイル」なら子のパスは "/A"、特定フォルダなら "/起点名/A"
+	std::wstring rootPath = allFiles ? std::wstring() : L"/" + rootName;
+
+	// 最近使ったフォルダは設定ファイルから表示するだけなので API を呼ばない。
+	// 起点を絞っているときは、起点の下で作成したもの（パスが起点名で始まるもの）だけを表示する
+	std::vector<const RecentFolder*> recents;
+	for (const auto& r : cfg.recent) {
+		if (allFiles || r.path.compare(0, rootPath.size() + 1, rootPath + L"/") == 0) recents.push_back(&r);
+	}
+	if (!recents.empty()) {
 		HTREEITEM hRecent = InsertTreeItem(st.hTree, TVI_ROOT, L"最近使ったフォルダ", nullptr, true);
-		for (const auto& r : st.req.cfg->recent) {
+		for (const RecentFolder* rp : recents) {
+			const RecentFolder& r = *rp;
 			Node* n = NewNode(st);
 			n->id = r.id;
 			n->path = r.path;
@@ -260,12 +275,14 @@ void BuildTree(DialogState& st)
 	}
 
 	Node* root = NewNode(st);
-	root->id = "0";
-	root->name = L"すべてのファイル";
+	root->id = cfg.rootFolderId;
+	root->name = rootName;
+	root->path = rootPath;
+	root->root = true;
 	st.hAllRoot = InsertTreeItem(st.hTree, TVI_ROOT, root->name, root, true);
 
-	// 最近使ったフォルダがあれば、ルートは展開されるまで読み込まない
-	if (st.req.client->IsLoggedIn() && st.req.cfg->recent.empty()) {
+	// 最近使ったフォルダがあれば、起点は展開されるまで読み込まない
+	if (st.req.client->IsLoggedIn() && recents.empty()) {
 		TreeView_Expand(st.hTree, st.hAllRoot, TVE_EXPAND);
 	}
 }
@@ -292,7 +309,7 @@ void RefreshSelected(DialogState& st)
 void UpdateOkButton(DialogState& st)
 {
 	Node* node = SelectedNode(st);
-	bool enable = st.req.client->IsLoggedIn() && !st.loggingIn && node && node->id != "0";
+	bool enable = st.req.client->IsLoggedIn() && !st.loggingIn && node && !node->root;
 	::EnableWindow(::GetDlgItem(st.hDlg, IDOK), enable);
 }
 
@@ -491,7 +508,7 @@ void OnCreateLink(DialogState& st)
 	BoxClient& client = *st.req.client;
 
 	Node* node = SelectedNode(st);
-	if (!node || node->id == "0") {
+	if (!node || node->root) {
 		::MessageBoxW(hDlg, L"共有するフォルダを選択してください。", kTitle, MB_OK | MB_ICONINFORMATION);
 		return;
 	}
@@ -677,7 +694,7 @@ INT_PTR OnNotify(DialogState& st, NMHDR* hdr)
 	if (hdr->code == TVN_SELCHANGEDW || hdr->code == TVN_SELCHANGEDA) {
 		auto* nm = reinterpret_cast<NMTREEVIEWW*>(hdr);
 		Node* node = reinterpret_cast<Node*>(nm->itemNew.lParam);
-		std::wstring path = (node && node->id != "0") ? node->path : std::wstring();
+		std::wstring path = (node && !node->root) ? node->path : std::wstring();
 		::SetDlgItemTextW(st.hDlg, IDC_SELPATH, path.c_str());
 		if (node && node->sharedLink.is_object()) {
 			SetStatus(st, L"このフォルダには既に共有リンクがあります");

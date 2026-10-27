@@ -17,6 +17,9 @@ struct Config {
 	int expireDays = 14;
 	bool otpEnabled = true;
 	bool canDownload = true;
+	// [browse]  フォルダ一覧の起点（"0" = すべてのファイル）。名前は表示用で、空なら ID を表示する
+	std::string rootFolderId = "0";
+	std::wstring rootFolderName;
 	// [insert]  paste: カーソル位置に貼り付け / bottom: 本文末尾に追加 / clipboard: コピーのみ
 	std::wstring insertMode = L"paste";
 	// [recent]

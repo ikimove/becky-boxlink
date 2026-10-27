@@ -25,6 +25,13 @@ const wchar_t kTemplate[] =
 	L"; ダウンロードを許可するか\r\n"
 	L"can_download=1\r\n"
 	L"\r\n"
+	L"[browse]\r\n"
+	L"; フォルダ一覧の起点にする Box フォルダの ID（0=すべてのファイル）\r\n"
+	L"; ID は Box の Web 画面でフォルダを開いたときの URL https://app.box.com/folder/<ID> の数字\r\n"
+	L"root_folder_id=0\r\n"
+	L"; 起点フォルダの表示名（API 呼び出しを省くため設定ファイルで指定。空なら ID を表示）\r\n"
+	L"root_folder_name=\r\n"
+	L"\r\n"
 	L"[insert]\r\n"
 	L"; paste=カーソル位置に貼り付け / bottom=本文の末尾に追加 / clipboard=コピーのみ\r\n"
 	L"mode=paste\r\n";
@@ -72,6 +79,11 @@ void LoadConfig(const std::wstring& iniPath, Config& cfg)
 	cfg.expireDays = std::clamp(ReadInt(iniPath, L"link", L"expire_days", 14), 1, 3650);
 	cfg.otpEnabled = ReadInt(iniPath, L"link", L"otp_enabled", 1) != 0;
 	cfg.canDownload = ReadInt(iniPath, L"link", L"can_download", 1) != 0;
+
+	std::wstring rootId = ReadStr(iniPath, L"browse", L"root_folder_id", L"0");
+	if (rootId.empty() || rootId.find_first_not_of(L"0123456789") != std::wstring::npos) rootId = L"0";
+	cfg.rootFolderId = WideToUtf8(rootId);
+	cfg.rootFolderName = ReadStr(iniPath, L"browse", L"root_folder_name", L"");
 
 	cfg.insertMode = ReadStr(iniPath, L"insert", L"mode", L"paste");
 
