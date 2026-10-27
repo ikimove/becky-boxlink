@@ -145,12 +145,11 @@ std::string ExpireTimestamp(int days, std::wstring& display)
 	return iso;
 }
 
-std::wstring ComposeInsertText(const std::wstring& name, const std::string& url,
-                               const std::wstring& expireDisplay, bool otp)
+std::wstring ComposeInsertText(const std::string& url, const std::wstring& expireDisplay, bool otp)
 {
-	std::wstring text = L"【Box 共有リンク】" + name + L"\r\n" + Utf8ToWide(url) + L"\r\n";
+	std::wstring text = Utf8ToWide(url) + L"\r\n";
 	if (!expireDisplay.empty()) text += L"有効期限: " + expireDisplay + L" まで\r\n";
-	if (otp) text += L"※ 開く際に、このメールを受信したアドレスに届く確認コードの入力が必要です。\r\n";
+	if (otp) text += L"※ 開く際にメールアドレスの入力が必要です。入力したアドレスに届く確認コードを入力してください。\r\n";
 	return text;
 }
 
@@ -625,7 +624,7 @@ void OnCreateLink(DialogState& st)
 		return;
 	}
 
-	st.req.resultText = ComposeInsertText(node->name, url, expire ? expireDisplay : std::wstring(), otp);
+	st.req.resultText = ComposeInsertText(url, expire ? expireDisplay : std::wstring(), otp);
 
 	// 次回の既定値と「最近使ったフォルダ」を保存（ファイル書き込みのみ。API は呼ばない）
 	cfg.expireEnabled = expire;
